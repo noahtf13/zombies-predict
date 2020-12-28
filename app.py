@@ -7,18 +7,23 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
+import requests
+from io import StringIO
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__)
 
 server = app.server
 
 
+
 def check_sample_size():
-    zomb_rounds = pd.read_csv(
-        'https://docs.google.com/spreadsheets/d/19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI/export?format=csv&gid=0'
-    ).dropna()
+
+    orig_url = 'https://docs.google.com/spreadsheets/d/19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI/edit?usp=sharing'
+    file_id = orig_url.split('/')[-2]
+    dwn_url = 'https://drive.google.com/uc?export=download&id=' + file_id
+    url = requests.get(dwn_url).text
+    csv_raw = StringIO(url)
+    zomb_rounds = pd.read_csv(csv_raw)
 
     rows = [len(zomb_rounds)]
 
