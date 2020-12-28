@@ -8,6 +8,13 @@ import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
 
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+
+server = app.server
+
+
 def check_sample_size():
     zomb_rounds = pd.read_csv(
         'https://docs.google.com/spreadsheets/d/19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI/export?format=csv&gid=0'
@@ -96,4 +103,5 @@ app.layout = html.Div([
     dcc.Graph(id="bar-chart", figure=fig),
 ])
 
-app.run_server(debug=False)
+if __name__ == '__main__':
+    app.run_server(debug=True)
