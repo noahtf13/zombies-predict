@@ -24,7 +24,7 @@ Jinja2==2.11.2
 joblib==1.0.0
 MarkupSafe==1.1.1
 numpy==1.19.4
-pandas==0.22.0
+pandas==0.17.0
 plotly==4.14.1
 python-dateutil==1.5
 pytz==2020.5
