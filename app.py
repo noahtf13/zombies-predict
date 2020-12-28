@@ -7,8 +7,6 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
-import requests
-from io import StringIO
 
 app = dash.Dash(__name__)
 
@@ -18,12 +16,14 @@ server = app.server
 
 def check_sample_size():
 
-    orig_url = 'https://docs.google.com/spreadsheets/d/19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI/edit?usp=sharing'
-    file_id = orig_url.split('/')[-2]
-    dwn_url = 'https://drive.google.com/uc?export=download&id=' + file_id
-    url = requests.get(dwn_url).text
-    csv_raw = StringIO(url)
-    zomb_rounds = pd.read_csv(csv_raw)
+    googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
+    worksheetName = 'Sheet1'
+    URL = 'https://docs.google.com/spreadsheets/d/{0}/gviz/tq?tqx=out:csv&sheet={1}'.format(
+        googleSheetId,
+        worksheetName
+    )
+
+    zomb_rounds = pd.read_csv(URL)
 
     rows = [len(zomb_rounds)]
 
