@@ -1,7 +1,7 @@
 import pandas as pd
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.linear_model import Ridge
 import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV
 import math
 import dash
 import dash_core_components as dcc
@@ -9,10 +9,7 @@ import dash_html_components as html
 import plotly.express as px
 
 app = dash.Dash(__name__)
-
 server = app.server
-
-
 
 def check_sample_size():
 
@@ -97,8 +94,6 @@ def intercept():
 check_sample_size()
 coeffs = coeffs()
 intercept = intercept()
-
-app = dash.Dash(__name__)
 
 fig = px.bar(coeffs, x='rounds_added', y='variable',title = f"The intercept is: {round(intercept['intercept'][0],1)}")
 fig.update_xaxes(title='Round Multiplier')
