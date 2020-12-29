@@ -76,7 +76,8 @@ app.layout = html.Div([
             {'label': 'Will', 'value': 'will'},
             {'label': 'Stefan', 'value': 'stefan'},
             {'label': 'Noah', 'value': 'noah'}
-        ]
+        ],
+        value=['will','stefan','noah']
     ),
     dcc.Slider(
         id='slider',
