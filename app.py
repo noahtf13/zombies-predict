@@ -11,7 +11,7 @@ import plotly.express as px
 app = dash.Dash(__name__)
 server = app.server
 
-def rerun_model():
+def rerun_model(least_error = True):
     googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
     worksheetName = 'Sheet1'
     URL = 'https://docs.google.com/spreadsheets/d/{0}/gviz/tq?tqx=out:csv&sheet={1}'.format(
@@ -27,8 +27,8 @@ def rerun_model():
 
     label = np.log(df['rounds_completed'])
 
-    full_score, full_estimator = gscv(train_full, label, df)
-    small_score, small_estimator = gscv(train_small, label, df)
+    full_score, full_estimator = gscv(train_full, label, df, least_error)
+    small_score, small_estimator = gscv(train_small, label, df, least_error)
 
     if full_score > small_score:
         print(full_score)
@@ -60,9 +60,12 @@ def rerun_model():
     inter_df = pd.DataFrame({'intercept': intercept})
     return coeffs, inter_df
 
-def gscv(train, label, df):
+def gscv(train, label, df, least_error=True):
     multiply = df['rounds_completed'].mean()/math.e
-    parameters = {'alpha':[0.00000001,.01,.1,1,multiply,10,100,1000,1*10**10]}
+    if least_error == True:
+        parameters = {'alpha':[0.00000001,0.1,1,multiply,10,1*10**8]}
+    else:
+        parameters = {'alpha': [0]}
     model = Ridge()
     gscv = GridSearchCV(model, parameters, scoring='r2',cv=int(round(1/math.log(len(train))*15,0)))
     gscv.fit(train,label)
@@ -70,13 +73,34 @@ def gscv(train, label, df):
 
 coeffs, intercept = rerun_model()
 
-fig = px.bar(coeffs, x='rounds_added', y='variable',title = f"The intercept is: {round(intercept['intercept'][0],1)}")
-fig.update_xaxes(title='Round Multiplier')
-fig.update_yaxes(title='Challenge/Variable')
-
 app.layout = html.Div([
-    dcc.Graph(id="bar-chart", figure=fig),
+    dcc.Dropdown(
+        id='color-drop',
+        options=[
+            {'label': 'Least Error', 'value': 'least_error'},
+            {'label': 'Raw', 'value': 'raw'}
+        ],
+        value='NYC'
+    ),
+    dcc.Graph(id="coeff-graph", animate=False)
 ])
 
+@app.callback(
+    dash.dependencies.Output('coeff-graph', 'figure'),
+    dash.dependencies.Input('color-drop','value')
+)
+
+def update_graph_scatter(value):
+    if value == "least_error":
+        coeffs, intercept = rerun_model(least_error=True)
+    else:
+        coeffs, intercept = rerun_model(least_error=False)
+    fig = px.bar(coeffs, x='rounds_added', y='variable',
+                 title=f"The intercept is: {round(intercept['intercept'][0], 1)}")
+    fig.update_xaxes(title='Round Multiplier')
+    fig.update_yaxes(title='Challenge/Variable')
+    return fig
+
+
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=True,port=1234)
