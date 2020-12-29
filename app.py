@@ -8,7 +8,9 @@ import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
 
-app = dash.Dash(__name__)
+app = dash.Dash(__name__,meta_tags=[
+        {"name": "viewport", "content": "width=device-width, initial-scale=1"}
+    ])
 server = app.server
 
 def rerun_model(least_error = True):
