@@ -11,30 +11,14 @@ import plotly.express as px
 app = dash.Dash(__name__)
 server = app.server
 
-def check_sample_size():
-
+def rerun_model():
     googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
     worksheetName = 'Sheet1'
     URL = 'https://docs.google.com/spreadsheets/d/{0}/gviz/tq?tqx=out:csv&sheet={1}'.format(
         googleSheetId,
         worksheetName
     )
-
-    zomb_rounds = pd.read_csv(URL).dropna()
-
-    rows = [len(zomb_rounds)]
-
-    previous_rows = pd.read_csv('count.csv')
-    previous_rows['count'][0]
-
-    save = pd.DataFrame({'count': rows})
-    save.to_csv('count.csv', index=False, sep=',')
-
-    #     if previous_rows['count'][0] != rows[0]:
-    rerun_model(df=zomb_rounds)
-
-
-def rerun_model(df):
+    df = pd.read_csv(URL).dropna()
     df = df[df['beat_game_attempt'] == 0]
     df['num_perks_removed'] = df.iloc[:, 4:10].sum(axis=1)
     train = df.drop(['beat_game_attempt', 'win_game', 'rounds_completed', 'date'], axis=1)
@@ -72,10 +56,9 @@ def rerun_model(df):
     best_model = best_model.fit(train, label)
     coeffs.columns = ['variable', 'rounds_added']
     coeffs['rounds_added'] = math.e ** coeffs['rounds_added']
-    coeffs.to_csv('variables.csv', index=False, sep=',')
     intercept = [math.e ** best_model.intercept_]
     inter_df = pd.DataFrame({'intercept': intercept})
-    inter_df.to_csv('intercept.csv', index=False, sep=',')
+    return coeffs, inter_df
 
 def gscv(train, label, df):
     multiply = df['rounds_completed'].mean()/math.e
@@ -85,15 +68,7 @@ def gscv(train, label, df):
     gscv.fit(train,label)
     return gscv.best_score_, gscv.best_estimator_
 
-def coeffs():
-    return pd.read_csv('variables.csv')
-
-def intercept():
-    return pd.read_csv('intercept.csv')
-
-check_sample_size()
-coeffs = coeffs()
-intercept = intercept()
+coeffs, intercept = rerun_model()
 
 fig = px.bar(coeffs, x='rounds_added', y='variable',title = f"The intercept is: {round(intercept['intercept'][0],1)}")
 fig.update_xaxes(title='Round Multiplier')
