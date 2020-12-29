@@ -75,19 +75,19 @@ coeffs, intercept = rerun_model()
 
 app.layout = html.Div([
     dcc.Dropdown(
-        id='color-drop',
+        id='regularization-drop',
         options=[
             {'label': 'Least Error', 'value': 'least_error'},
             {'label': 'Raw', 'value': 'raw'}
         ],
-        value='NYC'
+        value='least_error'
     ),
     dcc.Graph(id="coeff-graph", animate=False)
 ])
 
 @app.callback(
     dash.dependencies.Output('coeff-graph', 'figure'),
-    dash.dependencies.Input('color-drop','value')
+    dash.dependencies.Input('regularization-drop','value')
 )
 
 def update_graph_scatter(value):
