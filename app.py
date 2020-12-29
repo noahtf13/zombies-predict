@@ -23,7 +23,7 @@ def check_sample_size():
         worksheetName
     )
 
-    zomb_rounds = pd.read_csv(URL)
+    zomb_rounds = pd.read_csv(URL).dropna()
 
     rows = [len(zomb_rounds)]
 
