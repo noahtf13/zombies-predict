@@ -65,7 +65,7 @@ def rerun_model(least_error = True):
 def gscv(train, label, df, least_error=True):
     multiply = df['rounds_completed'].mean()/math.e
     if least_error == True:
-        parameters = {'alpha':[0.00000001,0.1,1,multiply,10,1*10**8]}
+        parameters = {'alpha':[0.1,1,multiply,10]}
     else:
         parameters = {'alpha': [0]}
     model = Ridge()
@@ -84,16 +84,30 @@ app.layout = html.Div([
         ],
         value='least_error'
     ),
-    dcc.Graph(id="coeff-graph", animate=False)
+    dcc.Graph(id="coeff-graph", animate=False),
+    html.H2('Select who is playing below:'),
+    dcc.Checklist(
+        id='playing',
+        options=[
+            {'label': 'Will', 'value': 'will'},
+            {'label': 'Stefan', 'value': 'stefan'},
+            {'label': 'Noah', 'value': 'noah'}
+        ]
+    ),
+    dcc.Markdown(id='hard-rounds'),
+    html.Ul(id='var_list')
 ])
 
 @app.callback(
-    dash.dependencies.Output('coeff-graph', 'figure'),
-    dash.dependencies.Input('regularization-drop','value')
+    [dash.dependencies.Output('coeff-graph', 'figure'),
+    dash.dependencies.Output('hard-rounds', 'children'),
+     dash.dependencies.Output('var_list', 'children')],
+    [dash.dependencies.Input('regularization-drop','value'),
+    dash.dependencies.Input('playing', 'value')]
 )
 
-def update_graph_scatter(value):
-    if value == "least_error":
+def update_graph_scatter(regularization, playing):
+    if regularization == "least_error":
         coeffs, intercept = rerun_model(least_error=True)
     else:
         coeffs, intercept = rerun_model(least_error=False)
@@ -101,8 +115,32 @@ def update_graph_scatter(value):
                  title=f"The intercept is: {round(intercept['intercept'][0], 1)}")
     fig.update_xaxes(title='Round Multiplier')
     fig.update_yaxes(title='Challenge/Variable')
-    return fig
-
+    name_list = ['noah_playing','stefan_playing','will_playing']
+    if playing is None:
+        playing = []
+    name_cols = [f'{name}_playing' for name in playing]
+    if name_cols is None:
+        name_cols = []
+    name_values = coeffs[coeffs['variable'].isin(name_cols)]['rounds_added'].tolist()
+    neg_barriers = coeffs[(~coeffs['variable'].isin(name_list))&(coeffs['rounds_added'] < 1)]['rounds_added'].tolist()
+    neg_barr_names = coeffs[coeffs['rounds_added'] < 1]['variable'].tolist()
+    neg_barr_names = [value for value in neg_barr_names if value not in name_list]
+    if name_values is None:
+        name_values = []
+    final_list = name_values + neg_barriers
+    multipliers = []
+    for num in final_list:
+        if len(coeffs[coeffs['rounds_added'] == num]) > 0:
+            if 'num_perks_removed' in neg_barriers:
+                multipliers.append(coeffs[coeffs['rounds_added'] == num]['rounds_added'].tolist()[0]**6)
+            else:
+                multipliers.append(coeffs[coeffs['rounds_added'] == num]['rounds_added'].tolist()[0])
+    num_rounds = "**Hardest Game - Predicted Rounds: **" + str(round(np.prod(multipliers) * (intercept['intercept'].tolist()[0]),1))
+    print(name_values)
+    print(multipliers)
+    print(final_list)
+    neg_barr_names = [html.Li(x) for x in neg_barr_names]
+    return fig, num_rounds, neg_barr_names
 
 if __name__ == '__main__':
     app.run_server(debug=True,port=1234)
