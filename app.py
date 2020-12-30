@@ -9,10 +9,16 @@ import dash_html_components as html
 import plotly.express as px
 import itertools
 
-app = dash.Dash(__name__,meta_tags=[
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+
+app = dash.Dash(
+    __name__,
+    external_stylesheets= external_stylesheets,
+    meta_tags=[
         {"name": "viewport", "content": "width=device-width, initial-scale=1"}
     ])
 server = app.server
+
 
 def rerun_model(least_error = True):
     googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
@@ -60,6 +66,7 @@ def gscv(train, label, df, least_error=True):
 coeffs, intercept, best_model = rerun_model()
 
 app.layout = html.Div([
+    dcc.Markdown(open('instructions.markdown','r').read()),
     dcc.Dropdown(
         id='regularization-drop',
         options=[
@@ -85,7 +92,12 @@ app.layout = html.Div([
         max=50,
         step=1,
         value=10,
-        marks=dict([(i,str(i)) for i in range(0,50,5)])
+        marks=dict([(i,str(i)) for i in range(0,50,5)]),
+        tooltip = {'always_visible': True}
+    ),
+    html.Div(
+        dcc.Markdown('Desired Rounds Predicted (Put slider at 0 for hardest round possible)'),
+        style=dict(display='flex', justifyContent='center')
     ),
     dcc.Markdown(id='hard-rounds'),
     html.H5('Barriers Used:'),
@@ -114,6 +126,7 @@ def update_graph_scatter(regularization, playing, slider):
                  title=f"The intercept is: {round(intercept['intercept'][0], 1)}")
     fig.update_xaxes(title='Round Multiplier')
     fig.update_yaxes(title='Challenge/Variable')
+    fig.update_layout(xaxis=dict(range=[coeffs['rounds_added'].min()*.975, coeffs['rounds_added'].max()*1.025]))
     name_list = ['noah_playing','stefan_playing','will_playing']
     if playing is None:
         playing = []
