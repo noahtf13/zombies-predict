@@ -88,13 +88,17 @@ app.layout = html.Div([
         marks=dict([(i,str(i)) for i in range(0,50,5)])
     ),
     dcc.Markdown(id='hard-rounds'),
-    html.Ul(id='var_list')
+    html.H5('Barriers Used:'),
+    html.Ul(id='var_list'),
+    html.H5('Barriers Not Used:'),
+    html.Ul(id='unused-var-list')
 ])
 
 @app.callback(
     [dash.dependencies.Output('coeff-graph', 'figure'),
     dash.dependencies.Output('hard-rounds', 'children'),
-     dash.dependencies.Output('var_list', 'children')],
+     dash.dependencies.Output('var_list', 'children'),
+     dash.dependencies.Output('unused-var-list', 'children')],
     [dash.dependencies.Input('regularization-drop','value'),
     dash.dependencies.Input('playing', 'value'),
      dash.dependencies.Input('slider','value')
@@ -141,25 +145,11 @@ def update_graph_scatter(regularization, playing, slider):
     barriers = s.index.values[(s == 1)]
     final_barriers = [barrier for barrier in barriers if barrier not in name_list]
     neg_barr_names = [html.Li(x) for x in final_barriers]
+    unused_barr = [html.Li(x) for x in col_list if (x not in final_barriers) and (x not in name_list)]
     print(best_game)
     num_rounds = "**Chosen Game - Predicted Rounds: **" + str(round(best_game['prediction'].tolist()[0],1))
 
-    # name_values = coeffs[coeffs['variable'].isin(name_cols)]['rounds_added'].tolist()
-    # neg_barriers = coeffs[(~coeffs['variable'].isin(name_list))&(coeffs['rounds_added'] < 1)]['rounds_added'].tolist()
-    # neg_barr_names = coeffs[coeffs['rounds_added'] < 1]['variable'].tolist()
-    # neg_barr_names = [value for value in neg_barr_names if value not in name_list]
-    # if name_values is None:
-    #     name_values = []
-    # final_list = name_values + neg_barriers
-    # multipliers = []
-    # for num in final_list:
-    #     if len(coeffs[coeffs['rounds_added'] == num]) > 0:
-    #         if 'num_perks_removed' in neg_barriers:
-    #             multipliers.append(coeffs[coeffs['rounds_added'] == num]['rounds_added'].tolist()[0]**6)
-    #         else:
-    #             multipliers.append(coeffs[coeffs['rounds_added'] == num]['rounds_added'].tolist()[0])
-    # num_rounds = "**Hardest Game - Predicted Rounds: **" + str(round(np.prod(multipliers) * (intercept['intercept'].tolist()[0]),1))
-    return fig, num_rounds, neg_barr_names
+    return fig, num_rounds, neg_barr_names, unused_barr
 
 if __name__ == '__main__':
     app.run_server(debug=True,port=1234)
