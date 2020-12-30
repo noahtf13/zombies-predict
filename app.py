@@ -17,7 +17,7 @@ app = dash.Dash(
 server = app.server
 
 
-def rerun_model(least_error = True):
+def rerun_model(least_error=True):
     googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
     worksheetName = 'Sheet1'
     URL = 'https://docs.google.com/spreadsheets/d/{0}/gviz/tq?tqx=out:csv&sheet={1}'.format(
@@ -49,21 +49,23 @@ def rerun_model(least_error = True):
     inter_df = pd.DataFrame({'intercept': intercept})
     return coeffs, inter_df, best_model
 
+
 def gscv(train, label, df, least_error=True):
     multiply = df['rounds_completed'].mean()/math.e
-    if least_error == True:
-        parameters = {'alpha':[0.1,1,multiply,10]}
+    if least_error is True:
+        parameters = {'alpha': [0.1, 1, multiply, 10]}
     else:
         parameters = {'alpha': [0]}
     model = Ridge()
-    gscv = GridSearchCV(model, parameters, scoring='r2',cv=int(round(1/math.log(len(train))*15,0)))
-    gscv.fit(train,label)
+    gscv = GridSearchCV(model, parameters, scoring='r2', cv=int(round(1/math.log(len(train))*15, 0)))
+    gscv.fit(train, label)
     return gscv.best_score_, gscv.best_estimator_
+
 
 coeffs, intercept, best_model = rerun_model()
 
 app.layout = html.Div([
-    dcc.Markdown(open('instructions.markdown','r').read()),
+    dcc.Markdown(open('instructions.markdown', 'r').read()),
     dcc.Dropdown(
         id='regularization-drop',
         options=[
@@ -81,7 +83,7 @@ app.layout = html.Div([
             {'label': 'Stefan', 'value': 'stefan'},
             {'label': 'Noah', 'value': 'noah'}
         ],
-        value=['will','stefan','noah']
+        value=['will', 'stefan', 'noah']
     ),
     dcc.Slider(
         id='slider',
@@ -89,8 +91,8 @@ app.layout = html.Div([
         max=50,
         step=1,
         value=10,
-        marks=dict([(i,str(i)) for i in range(0,50,5)]),
-        tooltip = {'always_visible': True}
+        marks=dict([(i, str(i)) for i in range(0, 50, 5)]),
+        tooltip={'always_visible': True}
     ),
     html.Div(
         dcc.Markdown('Desired Rounds Predicted (Put slider at 0 for hardest round possible)'),
@@ -103,14 +105,17 @@ app.layout = html.Div([
     html.Ul(id='unused-var-list')
 ])
 
+
 @app.callback(
-    [dash.dependencies.Output('coeff-graph', 'figure'),
-    dash.dependencies.Output('hard-rounds', 'children'),
-     dash.dependencies.Output('var_list', 'children'),
-     dash.dependencies.Output('unused-var-list', 'children')],
-    [dash.dependencies.Input('regularization-drop','value'),
-    dash.dependencies.Input('playing', 'value'),
-     dash.dependencies.Input('slider','value')
+    [
+        dash.dependencies.Output('coeff-graph', 'figure'),
+        dash.dependencies.Output('hard-rounds', 'children'),
+        dash.dependencies.Output('var_list', 'children'),
+        dash.dependencies.Output('unused-var-list', 'children')],
+    [
+        dash.dependencies.Input('regularization-drop', 'value'),
+        dash.dependencies.Input('playing', 'value'),
+        dash.dependencies.Input('slider', 'value')
      ]
 )
 
@@ -124,7 +129,7 @@ def update_graph_scatter(regularization, playing, slider):
     fig.update_xaxes(title='Round Multiplier')
     fig.update_yaxes(title='Challenge/Variable')
     fig.update_layout(xaxis=dict(range=[coeffs['rounds_added'].min()*.975, coeffs['rounds_added'].max()*1.025]))
-    name_list = ['noah_playing','stefan_playing','will_playing']
+    name_list = ['noah_playing', 'stefan_playing', 'will_playing']
     if playing is None:
         playing = []
     name_cols = [f'{name}_playing' for name in playing]
@@ -136,12 +141,10 @@ def update_graph_scatter(regularization, playing, slider):
             name_dict[name] = 1
         else:
             name_dict[name] = 0
-
     col_list = coeffs['variable'].tolist()
     lst = [list(i) for i in itertools.product([0, 1], repeat=len(col_list))]
     all_possible = pd.DataFrame(lst, columns=col_list)
     all_possible['prediction'] = math.e**best_model.predict(all_possible)
-
     relev_games_df = (
         all_possible[
             (all_possible['noah_playing'] == name_dict['noah_playing']) &
@@ -157,9 +160,9 @@ def update_graph_scatter(regularization, playing, slider):
     neg_barr_names = [html.Li(x) for x in final_barriers]
     unused_barr = [html.Li(x) for x in col_list if (x not in final_barriers) and (x not in name_list)]
     print(best_game)
-    num_rounds = "**Chosen Game - Predicted Rounds: **" + str(round(best_game['prediction'].tolist()[0],1))
-
+    num_rounds = "**Chosen Game - Predicted Rounds: **" + str(round(best_game['prediction'].tolist()[0], 1))
     return fig, num_rounds, neg_barr_names, unused_barr
 
+
 if __name__ == '__main__':
-    app.run_server(debug=True,port=1234)
+    app.run_server(debug=True, port=1234)
