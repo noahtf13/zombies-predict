@@ -1,4 +1,5 @@
 import pandas as pd
+from pandas.util.testing import assert_frame_equal
 from sklearn.linear_model import Ridge
 import numpy as np
 from sklearn.model_selection import GridSearchCV
@@ -8,16 +9,22 @@ import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
 import itertools
+import s3fs
+import pickle
+import datetime
+import dash_bootstrap_components as dbc
 
 app = dash.Dash(
     __name__,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
     meta_tags=[
         {"name": "viewport", "content": "width=device-width, initial-scale=1"}
-    ])
+    ],
+    suppress_callback_exceptions=True
+)
 server = app.server
 
-
-def rerun_model(least_error=True):
+def check_df():
     googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
     worksheetName = 'Sheet1'
     URL = 'https://docs.google.com/spreadsheets/d/{0}/gviz/tq?tqx=out:csv&sheet={1}'.format(
@@ -26,43 +33,87 @@ def rerun_model(least_error=True):
     )
     df = pd.read_csv(URL).dropna()
     df = df[df['beat_game_attempt'] == 0]
+    df.index = range(0, len(df))
+    s3 = s3fs.S3FileSystem(anon=False)
+    try:
+        df_s3 = pd.read_csv('s3://zomb-model-storage/db_extract.csv')
+        assert_frame_equal(df, df_s3)
+
+        return df, True
+    except:
+        with s3.open('s3://zomb-model-storage/db_extract.csv', 'w') as f:
+            df.to_csv(f, index=False)
+            return df, False
+
+
+def clean_df(df):
     train = df.drop(['beat_game_attempt', 'win_game', 'rounds_completed', 'date'], axis=1)
-
     label = np.log(df['rounds_completed'])
+    return train, label
 
-    full_score, full_estimator = gscv(train, label, df, least_error)
+def train(use_pickle=0):
+    df, answer = check_df()
+    train, label = clean_df(df)
+    if use_pickle == 0:
+        best_model_reg, best_model_raw = gscv(train, label, df)
+        fs = s3fs.S3FileSystem(anon=False)
+        for model in ['reg','raw']:
+            if model == 'reg':
+                trained_model = best_model_reg
+            else:
+                trained_model = best_model_raw
+            filename = f"zomb-model-storage/lr_save_{model}.sav"
+            pickle.dump(trained_model, fs.open(filename, 'wb'))
+    else:
+        fs = s3fs.S3FileSystem(anon=False)
+        with fs.open('s3://zomb-model-storage/lr_save_reg.sav', 'rb') as handle:
+                best_model_reg = pickle.load(handle)
+        with fs.open('s3://zomb-model-storage/lr_save_raw.sav', 'rb') as handle:
+                best_model_raw = pickle.load(handle)
+    for model in ['reg','raw']:
+        if model == 'reg':
+            model_file = best_model_reg
+            reg_coeffs, reg_inter, reg_model = coeffs(train,model_file)
+        else:
+            model_file = best_model_raw
+            raw_coeffs, raw_inter, raw_model = coeffs(train,model_file)
+    return reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model
 
-    best_model = full_estimator
+
+def coeffs(train, model):
     coeffs = (
         pd.concat(
             [
                 pd.DataFrame(train.columns),
-                pd.DataFrame(np.transpose(best_model.coef_))
+                pd.DataFrame(np.transpose(model.coef_))
             ], axis=1
         )
     )
-
-    best_model = best_model.fit(train, label)
     coeffs.columns = ['variable', 'rounds_added']
     coeffs['rounds_added'] = math.e ** coeffs['rounds_added']
-    intercept = [math.e ** best_model.intercept_]
+    intercept = [math.e ** model.intercept_]
     inter_df = pd.DataFrame({'intercept': intercept})
-    return coeffs, inter_df, best_model
+    return coeffs, inter_df, model
 
 
-def gscv(train, label, df, least_error=True):
+def gscv(train, label, df):
     multiply = df['rounds_completed'].mean()/math.e
-    if least_error is True:
-        parameters = {'alpha': [0.1, 1, multiply, 10]}
-    else:
-        parameters = {'alpha': [0]}
-    model = Ridge()
-    gscv = GridSearchCV(model, parameters, scoring='r2', cv=int(round(1/math.log(len(train))*15, 0)))
-    gscv.fit(train, label)
-    return gscv.best_score_, gscv.best_estimator_
+    for model in ['raw','reg']:
+        if model == 'reg':
+            parameters = {'alpha': [0.1, 1, multiply, 10]}
+            model = Ridge()
+            gscv_reg = GridSearchCV(model, parameters, scoring='r2', cv=int(round(1 / math.log(len(train)) * 15, 0)))
+            gscv_reg.fit(train, label)
+        else:
+            parameters = {'alpha': [0]}
+            model = Ridge()
+            gscv_raw = GridSearchCV(model, parameters, scoring='r2', cv=int(round(1 / math.log(len(train)) * 15, 0)))
+            gscv_raw.fit(train, label)
 
 
-coeffs, intercept, best_model = rerun_model()
+    return gscv_reg.best_estimator_, gscv_raw.best_estimator_
+
+
 
 app.layout = html.Div([
     dcc.Markdown(open('instructions.markdown', 'r').read()),
@@ -73,6 +124,12 @@ app.layout = html.Div([
             {'label': 'Raw', 'value': 'raw'}
         ],
         value='least_error'
+    ),
+    dcc.Loading(
+        id="loading-1",
+        type="default",
+        children=html.Div(id="loading-output-1"),
+        fullscreen=True
     ),
     dcc.Graph(id="coeff-graph", animate=False),
     html.H2('Select who is playing below:'),
@@ -106,24 +163,43 @@ app.layout = html.Div([
 ])
 
 
+
 @app.callback(
     [
         dash.dependencies.Output('coeff-graph', 'figure'),
         dash.dependencies.Output('hard-rounds', 'children'),
         dash.dependencies.Output('var_list', 'children'),
-        dash.dependencies.Output('unused-var-list', 'children')],
+        dash.dependencies.Output('unused-var-list', 'children'),
+        dash.dependencies.Output("loading-output-1", "children")
+    ],
     [
         dash.dependencies.Input('regularization-drop', 'value'),
         dash.dependencies.Input('playing', 'value'),
-        dash.dependencies.Input('slider', 'value')
-     ]
+        dash.dependencies.Input('slider', 'value'),
+    ]
 )
 
 def update_graph_scatter(regularization, playing, slider):
-    if regularization == "least_error":
-        coeffs, intercept, best_model = rerun_model(least_error=True)
+    begin_time = datetime.datetime.now()
+    df, no_update = check_df()
+    if no_update == True:
+        print('pandas df was the same')
+        try:
+            reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train(use_pickle=1)
+            print('pickle used')
+        except Exception as e:
+            print(e)
+            reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train(use_pickle=0)
+            print('pickle not used')
     else:
-        coeffs, intercept, best_model = rerun_model(least_error=False)
+        print('pandas df needed to be updated')
+        reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train(use_pickle=0)
+        print('pickle not used')
+    if regularization == 'least_error':
+        coeffs, intercept, best_model = reg_coeffs, reg_inter, reg_model
+    else:
+        coeffs, intercept, best_model = raw_coeffs, raw_inter, raw_model
+
     fig = px.bar(coeffs, x='rounds_added', y='variable',
                  title=f"The intercept is: {round(intercept['intercept'][0], 1)}")
     fig.update_xaxes(title='Round Multiplier')
@@ -159,10 +235,12 @@ def update_graph_scatter(regularization, playing, slider):
     final_barriers = [barrier for barrier in barriers if barrier not in name_list]
     neg_barr_names = [html.Li(x) for x in final_barriers]
     unused_barr = [html.Li(x) for x in col_list if (x not in final_barriers) and (x not in name_list)]
-    print(best_game)
     num_rounds = "**Chosen Game - Predicted Rounds: **" + str(round(best_game['prediction'].tolist()[0], 1))
-    return fig, num_rounds, neg_barr_names, unused_barr
+    print(datetime.datetime.now() - begin_time)
+    loading = ""
+    return fig, num_rounds, neg_barr_names, unused_barr, loading
+
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True, port=1234)
+    app.run_server(debug=True,port=1234)
