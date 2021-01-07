@@ -176,7 +176,6 @@ app.layout = html.Div([
         marks=dict([(i, str(i)) for i in range(0, 50, 5)]),
         tooltip={'always_visible': True}
     ),
-    html.Button(id='submit-button-state', n_clicks=0, children='Predict'),
     html.Div(
         dcc.Markdown('Desired Rounds Predicted (Put slider at 0 for hardest round possible)'),
         style=dict(display='flex', justifyContent='center')
@@ -207,10 +206,12 @@ def update_model(value):
     for model in ["raw","least_error"]:
         if model == "raw":
             all_possible_raw = pd.DataFrame(lst, columns=col_list)
-            all_possible_raw['prediction'] = math.e**raw_model.predict(all_possible_raw)
+            all_possible_raw['prediction'] = (math.e**raw_model.predict(all_possible_raw)).round(0)
+            all_possible_raw = all_possible_raw.drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
         else:
             all_possible_le = pd.DataFrame(lst, columns=col_list)
-            all_possible_le['prediction'] = math.e**raw_model.predict(all_possible_le)
+            all_possible_le['prediction'] = (math.e**raw_model.predict(all_possible_le)).round(0)
+            all_possible_le = all_possible_le.drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
     datasets = {
         'reg_coeffs': reg_coeffs.to_json(orient='split'),
         'reg_inter': reg_inter.to_json(orient='split'),
@@ -281,8 +282,8 @@ def update_chosen_round(slider,regularization, json_datasets, playing):
         coeffs, intercept = reg_coeffs, reg_inter
     else:
         all_possible = pd.read_json(datasets['all_possible_raw'], orient='split')
-        raw_coeffs = pd.read_json(datasets['reg_coeffs'], orient='split')
-        raw_inter = pd.read_json(datasets['reg_inter'], orient='split')
+        raw_coeffs = pd.read_json(datasets['raw_coeffs'], orient='split')
+        raw_inter = pd.read_json(datasets['raw_inter'], orient='split')
         coeffs, intercept = raw_coeffs, raw_inter
 
     name_list = ['noah_playing', 'stefan_playing', 'will_playing']
