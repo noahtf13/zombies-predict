@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from pandas.util.testing import assert_frame_equal
 from sklearn.linear_model import Ridge
@@ -13,10 +14,12 @@ import s3fs
 import pickle
 import datetime
 import dash_bootstrap_components as dbc
+from dash.exceptions import PreventUpdate
+
 
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    external_stylesheets=[dbc.themes.MINTY],
     meta_tags=[
         {"name": "viewport", "content": "width=device-width, initial-scale=1"}
     ],
@@ -38,7 +41,6 @@ def check_df():
     try:
         df_s3 = pd.read_csv('s3://zomb-model-storage/db_extract.csv')
         assert_frame_equal(df, df_s3)
-
         return df, True
     except:
         with s3.open('s3://zomb-model-storage/db_extract.csv', 'w') as f:
@@ -51,25 +53,16 @@ def clean_df(df):
     label = np.log(df['rounds_completed'])
     return train, label
 
-def train(use_pickle=0):
+def train():
     df, answer = check_df()
     train, label = clean_df(df)
-    if use_pickle == 0:
-        best_model_reg, best_model_raw = gscv(train, label, df)
-        fs = s3fs.S3FileSystem(anon=False)
-        for model in ['reg','raw']:
-            if model == 'reg':
-                trained_model = best_model_reg
-            else:
-                trained_model = best_model_raw
-            filename = f"zomb-model-storage/lr_save_{model}.sav"
-            pickle.dump(trained_model, fs.open(filename, 'wb'))
-    else:
-        fs = s3fs.S3FileSystem(anon=False)
-        with fs.open('s3://zomb-model-storage/lr_save_reg.sav', 'rb') as handle:
-                best_model_reg = pickle.load(handle)
-        with fs.open('s3://zomb-model-storage/lr_save_raw.sav', 'rb') as handle:
-                best_model_raw = pickle.load(handle)
+    best_model_reg, best_model_raw = gscv(train, label, df)
+    fs = s3fs.S3FileSystem(anon=False)
+    for model in ['reg','raw']:
+        if model == 'reg':
+            trained_model = best_model_reg
+        else:
+            trained_model = best_model_raw
     for model in ['reg','raw']:
         if model == 'reg':
             model_file = best_model_reg
@@ -114,8 +107,28 @@ def gscv(train, label, df):
     return gscv_reg.best_estimator_, gscv_raw.best_estimator_
 
 
+PLOTLY_LOGO = "https://www.flaticon.com/svg/static/icons/svg/218/218153.svg"
 
 app.layout = html.Div([
+    dbc.Navbar(
+        [
+            html.A(
+                # Use row and col to control vertical alignment of logo / brand
+                dbc.Row(
+                    [
+                        dbc.Col(html.Img(src=PLOTLY_LOGO, height="50px")),
+                        dbc.Col(dbc.NavbarBrand("Zombies Predictions", className="ml-2")),
+                    ],
+                    align="center",
+                    no_gutters=True,
+                ),
+                href="https://plot.ly",
+            ),
+            dbc.NavbarToggler(id="navbar-toggler")
+        ],
+        color="primary",
+        dark=True,
+    ),
     dcc.Markdown(open('instructions.markdown', 'r').read()),
     dcc.Dropdown(
         id='regularization-drop',
@@ -125,13 +138,25 @@ app.layout = html.Div([
         ],
         value='least_error'
     ),
+    dcc.Graph(id="coeff-graph", animate=False),
     dcc.Loading(
         id="loading-1",
         type="default",
         children=html.Div(id="loading-output-1"),
-        fullscreen=True
+        fullscreen=False
     ),
-    dcc.Graph(id="coeff-graph", animate=False),
+    dcc.Loading(
+        id="loading-2",
+        type="default",
+        children=html.Div(id="loading-output-2"),
+        fullscreen=False
+    ),
+    dcc.Loading(
+        id="loading-3",
+        type="default",
+        children=html.Div(id="loading-output-3"),
+        fullscreen=False
+    ),
     html.H2('Select who is playing below:'),
     dcc.Checklist(
         id='playing',
@@ -151,6 +176,7 @@ app.layout = html.Div([
         marks=dict([(i, str(i)) for i in range(0, 50, 5)]),
         tooltip={'always_visible': True}
     ),
+    html.Button(id='submit-button-state', n_clicks=0, children='Predict'),
     html.Div(
         dcc.Markdown('Desired Rounds Predicted (Put slider at 0 for hardest round possible)'),
         style=dict(display='flex', justifyContent='center')
@@ -159,52 +185,106 @@ app.layout = html.Div([
     html.H5('Barriers Used:'),
     html.Ul(id='var_list'),
     html.H5('Barriers Not Used:'),
-    html.Ul(id='unused-var-list')
+    html.Ul(id='unused-var-list'),
+    html.Div(id='datasets', style={'display': 'none'}),
+    html.Div(id='blah', style={'display': 'none'}),
+
 ])
 
+@app.callback(
+    [
+        dash.dependencies.Output('datasets', 'children'),
+        dash.dependencies.Output("loading-output-1", "children")
 
+    ],
+        dash.dependencies.Input('blah', 'children')
+)
+
+def update_model(value):
+    reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train()
+    col_list = reg_coeffs['variable'].tolist()
+    lst = [list(i) for i in itertools.product([0, 1], repeat=len(col_list))]
+    for model in ["raw","least_error"]:
+        if model == "raw":
+            all_possible_raw = pd.DataFrame(lst, columns=col_list)
+            all_possible_raw['prediction'] = math.e**raw_model.predict(all_possible_raw)
+        else:
+            all_possible_le = pd.DataFrame(lst, columns=col_list)
+            all_possible_le['prediction'] = math.e**raw_model.predict(all_possible_le)
+    datasets = {
+        'reg_coeffs': reg_coeffs.to_json(orient='split'),
+        'reg_inter': reg_inter.to_json(orient='split'),
+        'raw_coeffs': raw_coeffs.to_json(orient='split'),
+        'raw_inter': raw_inter.to_json(orient='split'),
+        'all_possible_raw': all_possible_raw.to_json(orient='split'),
+        'all_possible_le': all_possible_le.to_json(orient='split')
+    }
+    print("I was used")
+    loading = ""
+    return json.dumps(datasets), loading
 
 @app.callback(
     [
         dash.dependencies.Output('coeff-graph', 'figure'),
-        dash.dependencies.Output('hard-rounds', 'children'),
-        dash.dependencies.Output('var_list', 'children'),
-        dash.dependencies.Output('unused-var-list', 'children'),
-        dash.dependencies.Output("loading-output-1", "children")
+        dash.dependencies.Output("loading-output-2", "children")
     ],
     [
         dash.dependencies.Input('regularization-drop', 'value'),
-        dash.dependencies.Input('playing', 'value'),
-        dash.dependencies.Input('slider', 'value'),
+        dash.dependencies.Input('datasets', 'children'),
     ]
 )
 
-def update_graph_scatter(regularization, playing, slider):
-    begin_time = datetime.datetime.now()
-    df, no_update = check_df()
-    if no_update == True:
-        print('pandas df was the same')
-        try:
-            reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train(use_pickle=1)
-            print('pickle used')
-        except Exception as e:
-            print(e)
-            reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train(use_pickle=0)
-            print('pickle not used')
+
+def update_graph(regularization, json_datasets):
+    datasets = json.loads(json_datasets)
+    if regularization == 'raw':
+        coeffs = pd.read_json(datasets['raw_coeffs'], orient='split')
+        intercept = pd.read_json(datasets['raw_inter'], orient='split')
     else:
-        print('pandas df needed to be updated')
-        reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train(use_pickle=0)
-        print('pickle not used')
-    if regularization == 'least_error':
-        coeffs, intercept, best_model = reg_coeffs, reg_inter, reg_model
-    else:
-        coeffs, intercept, best_model = raw_coeffs, raw_inter, raw_model
+        coeffs = pd.read_json(datasets['reg_coeffs'], orient='split')
+        intercept = pd.read_json(datasets['reg_inter'], orient='split')
 
     fig = px.bar(coeffs, x='rounds_added', y='variable',
                  title=f"The intercept is: {round(intercept['intercept'][0], 1)}")
     fig.update_xaxes(title='Round Multiplier')
     fig.update_yaxes(title='Challenge/Variable')
-    fig.update_layout(xaxis=dict(range=[coeffs['rounds_added'].min()*.975, coeffs['rounds_added'].max()*1.025]))
+    fig.update_layout(xaxis=dict(range=[coeffs['rounds_added'].min() * .9, coeffs['rounds_added'].max() * 1.1]))
+    loading = ""
+    return fig, loading
+
+
+
+
+@app.callback(
+    [
+        dash.dependencies.Output('hard-rounds', 'children'),
+        dash.dependencies.Output('var_list', 'children'),
+        dash.dependencies.Output('unused-var-list', 'children'),
+        dash.dependencies.Output("loading-output-3", "children")
+    ],
+    [
+        dash.dependencies.Input('slider', 'value'),
+        dash.dependencies.Input('regularization-drop', 'value'),
+        dash.dependencies.Input('datasets', 'children'),
+    ],
+    [
+        dash.dependencies.State('playing', 'value'),
+    ]
+)
+
+def update_chosen_round(slider,regularization, json_datasets, playing):
+    datasets = json.loads(json_datasets)
+    if regularization == 'least_error':
+        all_possible = pd.read_json(datasets['all_possible_le'], orient='split')
+        reg_coeffs = pd.read_json(datasets['reg_coeffs'], orient='split')
+        reg_inter = pd.read_json(datasets['reg_inter'], orient='split')
+        coeffs, intercept = reg_coeffs, reg_inter
+    else:
+        all_possible = pd.read_json(datasets['all_possible_raw'], orient='split')
+        raw_coeffs = pd.read_json(datasets['reg_coeffs'], orient='split')
+        raw_inter = pd.read_json(datasets['reg_inter'], orient='split')
+        coeffs, intercept = raw_coeffs, raw_inter
+
     name_list = ['noah_playing', 'stefan_playing', 'will_playing']
     if playing is None:
         playing = []
@@ -217,10 +297,6 @@ def update_graph_scatter(regularization, playing, slider):
             name_dict[name] = 1
         else:
             name_dict[name] = 0
-    col_list = coeffs['variable'].tolist()
-    lst = [list(i) for i in itertools.product([0, 1], repeat=len(col_list))]
-    all_possible = pd.DataFrame(lst, columns=col_list)
-    all_possible['prediction'] = math.e**best_model.predict(all_possible)
     relev_games_df = (
         all_possible[
             (all_possible['noah_playing'] == name_dict['noah_playing']) &
@@ -234,11 +310,11 @@ def update_graph_scatter(regularization, playing, slider):
     barriers = s.index.values[(s == 1)]
     final_barriers = [barrier for barrier in barriers if barrier not in name_list]
     neg_barr_names = [html.Li(x) for x in final_barriers]
+    col_list = coeffs['variable'].tolist()
     unused_barr = [html.Li(x) for x in col_list if (x not in final_barriers) and (x not in name_list)]
     num_rounds = "**Chosen Game - Predicted Rounds: **" + str(round(best_game['prediction'].tolist()[0], 1))
-    print(datetime.datetime.now() - begin_time)
     loading = ""
-    return fig, num_rounds, neg_barr_names, unused_barr, loading
+    return num_rounds, neg_barr_names, unused_barr, loading
 
 
 
