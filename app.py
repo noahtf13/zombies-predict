@@ -128,6 +128,7 @@ app.layout = html.Div([
         ],
         color="primary",
         dark=True,
+        sticky=True
     ),
     dcc.Markdown(open('instructions.markdown', 'r').read()),
     dcc.Dropdown(
@@ -210,7 +211,7 @@ def update_model(value):
             all_possible_raw = all_possible_raw.drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
         else:
             all_possible_le = pd.DataFrame(lst, columns=col_list)
-            all_possible_le['prediction'] = (math.e**raw_model.predict(all_possible_le)).round(0)
+            all_possible_le['prediction'] = (math.e**reg_model.predict(all_possible_le)).round(0)
             all_possible_le = all_possible_le.drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
     datasets = {
         'reg_coeffs': reg_coeffs.to_json(orient='split'),
@@ -267,9 +268,7 @@ def update_graph(regularization, json_datasets):
         dash.dependencies.Input('slider', 'value'),
         dash.dependencies.Input('regularization-drop', 'value'),
         dash.dependencies.Input('datasets', 'children'),
-    ],
-    [
-        dash.dependencies.State('playing', 'value'),
+        dash.dependencies.Input('playing', 'value'),
     ]
 )
 
