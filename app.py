@@ -26,6 +26,7 @@ app = dash.Dash(
     suppress_callback_exceptions=True
 )
 server = app.server
+app.title = "Zombies Predict"
 
 def check_df():
     googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
@@ -93,15 +94,14 @@ def gscv(train, label, df):
     multiply = df['rounds_completed'].mean()/math.e
     for model in ['raw','reg']:
         if model == 'reg':
-            parameters = {'alpha': [1, multiply]}
+            parameters = {'alpha': [0.1, 1, multiply, 10, 100, 1000]}
             model = Ridge()
-            gscv_reg = GridSearchCV(model, parameters, scoring='r2', cv=5)
+            gscv_reg = GridSearchCV(model, parameters, scoring='r2', cv=3)
             gscv_reg.fit(train, label)
-            print(gscv_reg.best_score_)
         else:
             parameters = {'alpha': [0]}
             model = Ridge()
-            gscv_raw = GridSearchCV(model, parameters, scoring='r2', cv=5)
+            gscv_raw = GridSearchCV(model, parameters, scoring='r2', cv=3)
             gscv_raw.fit(train, label)
 
 
@@ -126,7 +126,7 @@ app.layout = html.Div([
             ),
             dbc.NavbarToggler(id="navbar-toggler")
         ],
-        color="primary",
+        color="#78c2ad",
         dark=True,
         sticky='top'
     ),
@@ -249,7 +249,8 @@ def update_graph(regularization, json_datasets):
         intercept = pd.read_json(datasets['reg_inter'], orient='split')
 
     fig = px.bar(coeffs, x='rounds_added', y='variable',
-                 title=f"The intercept is: {round(intercept['intercept'][0], 1)}")
+                 title=f"Intercept: {round(intercept['intercept'][0], 1)}", color_discrete_sequence =['#78c2ad']*len(coeffs),
+)
     fig.update_xaxes(title='Round Multiplier')
     fig.update_yaxes(title='Challenge/Variable')
     fig.update_layout(xaxis=dict(range=[coeffs['rounds_added'].min() * .9, coeffs['rounds_added'].max() * 1.1]))
