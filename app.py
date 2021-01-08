@@ -15,15 +15,14 @@ import pickle
 import datetime
 import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
-
+import os
 
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.MINTY],
     meta_tags=[
         {"name": "viewport", "content": "width=device-width, initial-scale=1"}
     ],
-    suppress_callback_exceptions=True
+    suppress_callback_exceptions=True,
 )
 server = app.server
 app.title = "Zombies Predict"
