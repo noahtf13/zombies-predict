@@ -92,10 +92,9 @@ def coeffs(train, model):
 
 
 def gscv(train, label, df):
-    multiply = df['rounds_completed'].mean()/math.e
     for model in ['raw','reg']:
         if model == 'reg':
-            parameters = {'alpha': [0.1, 1, multiply, 10, 100, 1000]}
+            parameters = {'alpha': [1]}
             model = Ridge()
             gscv_reg = GridSearchCV(model, parameters, scoring='r2', cv=3)
             gscv_reg.fit(train, label)
