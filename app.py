@@ -93,19 +93,19 @@ def gscv(train, label, df):
     multiply = df['rounds_completed'].mean()/math.e
     for model in ['raw','reg']:
         if model == 'reg':
-            parameters = {'alpha': [0.1, 1, multiply, 10]}
+            parameters = {'alpha': [1, multiply]}
             model = Ridge()
-            gscv_reg = GridSearchCV(model, parameters, scoring='r2', cv=int(round(1 / math.log(len(train)) * 15, 0)))
+            gscv_reg = GridSearchCV(model, parameters, scoring='r2', cv=5)
             gscv_reg.fit(train, label)
+            print(gscv_reg.best_score_)
         else:
             parameters = {'alpha': [0]}
             model = Ridge()
-            gscv_raw = GridSearchCV(model, parameters, scoring='r2', cv=int(round(1 / math.log(len(train)) * 15, 0)))
+            gscv_raw = GridSearchCV(model, parameters, scoring='r2', cv=5)
             gscv_raw.fit(train, label)
 
 
     return gscv_reg.best_estimator_, gscv_raw.best_estimator_
-
 
 PLOTLY_LOGO = "https://www.flaticon.com/svg/static/icons/svg/218/218153.svg"
 
@@ -128,7 +128,7 @@ app.layout = html.Div([
         ],
         color="primary",
         dark=True,
-        sticky=True
+        sticky='top'
     ),
     dcc.Markdown(open('instructions.markdown', 'r').read()),
     dcc.Dropdown(
@@ -200,6 +200,8 @@ app.layout = html.Div([
         dash.dependencies.Input('blah', 'children')
 )
 
+
+
 def update_model(value):
     reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train()
     col_list = reg_coeffs['variable'].tolist()
@@ -208,11 +210,11 @@ def update_model(value):
         if model == "raw":
             all_possible_raw = pd.DataFrame(lst, columns=col_list)
             all_possible_raw['prediction'] = (math.e**raw_model.predict(all_possible_raw)).round(0)
-            all_possible_raw = all_possible_raw.drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
+            all_possible_raw = all_possible_raw.sample(frac=1).drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
         else:
             all_possible_le = pd.DataFrame(lst, columns=col_list)
             all_possible_le['prediction'] = (math.e**reg_model.predict(all_possible_le)).round(0)
-            all_possible_le = all_possible_le.drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
+            all_possible_le = all_possible_le.sample(frac=1).drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
     datasets = {
         'reg_coeffs': reg_coeffs.to_json(orient='split'),
         'reg_inter': reg_inter.to_json(orient='split'),
@@ -306,6 +308,7 @@ def update_chosen_round(slider,regularization, json_datasets, playing):
     )
     relev_games_df['round_diff'] = abs(relev_games_df['prediction'] - slider)
     best_game = relev_games_df[relev_games_df['round_diff'] == relev_games_df['round_diff'].min()]
+    best_game = best_game.drop('round_diff',axis=1)
     s = best_game.iloc[0]
     barriers = s.index.values[(s == 1)]
     final_barriers = [barrier for barrier in barriers if barrier not in name_list]
