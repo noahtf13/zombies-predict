@@ -23,6 +23,7 @@ app = dash.Dash(
         {"name": "viewport", "content": "width=device-width, initial-scale=1"}
     ],
     suppress_callback_exceptions=True,
+    external_stylesheets=[dbc.themes.MINTY]
 )
 server = app.server
 app.title = "Zombies Predict"
