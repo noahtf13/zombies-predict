@@ -27,6 +27,7 @@ app = dash.Dash(
 )
 server = app.server
 app.title = "Zombies Predict"
+app.css.config.serve_locally = True
 
 def check_df():
     googleSheetId = '19Cr_YXoGf-mvrEHtPUxdxIOIezs4ozwDMgH0OijhBsI'
