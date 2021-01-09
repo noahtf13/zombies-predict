@@ -55,16 +55,22 @@ def clean_df(df):
     label = np.log(df['rounds_completed'])
     return train, label
 
+def rarity_score(df,rarity_dict):
+    row_rarity = []
+    rarity_col = []
+    for index,row in df.iterrows():
+        for column in df.columns:
+            if column not in ['will_playing', 'stefan_playing', 'noah_playing']:
+                row_rarity.append(row[column] * rarity_dict[column])
+        rarity_col.append(np.sum(row_rarity))
+    df['row_rarity'] = rarity_col
+    return df
+
 def train():
     df, answer = check_df()
     train, label = clean_df(df)
+    rarity_dict = create_rarity_dict(train)
     best_model_reg, best_model_raw = gscv(train, label, df)
-    fs = s3fs.S3FileSystem(anon=False)
-    for model in ['reg','raw']:
-        if model == 'reg':
-            trained_model = best_model_reg
-        else:
-            trained_model = best_model_raw
     for model in ['reg','raw']:
         if model == 'reg':
             model_file = best_model_reg
@@ -72,7 +78,15 @@ def train():
         else:
             model_file = best_model_raw
             raw_coeffs, raw_inter, raw_model = coeffs(train,model_file)
-    return reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model
+    return reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model, rarity_dict
+
+def create_rarity_dict(df):
+    rarity_dict = {}
+    for column in df.columns:
+        if column not in ['will_playing', 'stefan_playing', 'noah_playing']:
+            rarity_dict[column] = 1 - df[column].mean()
+    print(rarity_dict)
+    return rarity_dict
 
 
 def coeffs(train, model):
@@ -203,18 +217,21 @@ app.layout = html.Div([
 
 
 def update_model(value):
-    reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model = train()
+    reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model, rarity_dict = train()
     col_list = reg_coeffs['variable'].tolist()
     lst = [list(i) for i in itertools.product([0, 1], repeat=len(col_list))]
+    all_possible_raw = pd.DataFrame(lst, columns=col_list).sample(2500)
+    all_possible_raw = rarity_score(all_possible_raw,rarity_dict)
+    all_possible_le = all_possible_raw.copy()
     for model in ["raw","least_error"]:
         if model == "raw":
-            all_possible_raw = pd.DataFrame(lst, columns=col_list)
-            all_possible_raw['prediction'] = (math.e**raw_model.predict(all_possible_raw)).round(0)
-            all_possible_raw = all_possible_raw.sample(frac=1).drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
+            all_possible_raw['prediction'] = (math.e**raw_model.predict(all_possible_raw.loc[:, all_possible_raw.columns != 'row_rarity'])).round(0)
+            all_possible_raw = all_possible_raw.sort_values('row_rarity', ascending=False).drop_duplicates(['will_playing','noah_playing','stefan_playing','prediction'])
+            print(all_possible_raw[0:5])
         else:
-            all_possible_le = pd.DataFrame(lst, columns=col_list)
-            all_possible_le['prediction'] = (math.e**reg_model.predict(all_possible_le)).round(0)
-            all_possible_le = all_possible_le.sample(frac=1).drop_duplicates(subset=['will_playing','noah_playing','stefan_playing','prediction'])
+            all_possible_le['prediction'] = (math.e**reg_model.predict(all_possible_le.loc[:, all_possible_le.columns != 'row_rarity'])).round(0)
+            all_possible_le = all_possible_le.sort_values('row_rarity', ascending=False).drop_duplicates(['will_playing','noah_playing','stefan_playing','prediction'])
+            print(all_possible_raw[0:5])
     datasets = {
         'reg_coeffs': reg_coeffs.to_json(orient='split'),
         'reg_inter': reg_inter.to_json(orient='split'),
