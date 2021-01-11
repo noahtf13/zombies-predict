@@ -16,6 +16,11 @@ import datetime
 import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
 import os
+import time
+import scipy.stats as stats
+
+pd.set_option('display.max_columns', None)
+
 
 app = dash.Dash(
     __name__,
@@ -61,7 +66,7 @@ def rarity_score(df,rarity_dict):
     for index,row in df.iterrows():
         for column in df.columns:
             if column not in ['will_playing', 'stefan_playing', 'noah_playing']:
-                row_rarity.append(row[column] * rarity_dict[column])
+                row_rarity.append((row[column] * rarity_dict[column] * 10) ** 2)
         rarity_col.append(np.sum(row_rarity)/len(row_rarity))
     df['row_rarity'] = rarity_col
     return df
@@ -70,7 +75,7 @@ def train():
     df, answer = check_df()
     train, label = clean_df(df)
     rarity_dict = create_rarity_dict(train)
-    best_model_reg, best_model_raw = gscv(train, label, df)
+    best_model_reg, best_model_raw, sd_reg, sd_raw = gscv(train, label, df)
     for model in ['reg','raw']:
         if model == 'reg':
             model_file = best_model_reg
@@ -78,14 +83,13 @@ def train():
         else:
             model_file = best_model_raw
             raw_coeffs, raw_inter, raw_model = coeffs(train,model_file)
-    return reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model, rarity_dict
+    return reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model, rarity_dict, sd_reg, sd_raw
 
 def create_rarity_dict(df):
     rarity_dict = {}
     for column in df.columns:
         if column not in ['will_playing', 'stefan_playing', 'noah_playing']:
-            rarity_dict[column] = 1 - (df[column].mean() ** 2)
-    print(rarity_dict)
+            rarity_dict[column] = 1 - df[column].mean()
     return rarity_dict
 
 
@@ -108,18 +112,21 @@ def coeffs(train, model):
 def gscv(train, label, df):
     for model in ['raw','reg']:
         if model == 'reg':
-            parameters = {'alpha': [1]}
+            parameters = {'alpha': [.1,1,5,10,100,1000]}
             model = Ridge()
-            gscv_reg = GridSearchCV(model, parameters, scoring='r2', cv=3)
+            gscv_reg = GridSearchCV(model, parameters, scoring='neg_mean_absolute_error', cv=4)
             gscv_reg.fit(train, label)
+            sd_reg = gscv_reg.best_score_
+            print(gscv_reg.best_params_)
         else:
             parameters = {'alpha': [0]}
             model = Ridge()
-            gscv_raw = GridSearchCV(model, parameters, scoring='r2', cv=3)
+            gscv_raw = GridSearchCV(model, parameters, scoring='neg_mean_absolute_error', cv=4)
             gscv_raw.fit(train, label)
+            sd_raw = gscv_raw.best_score_
 
 
-    return gscv_reg.best_estimator_, gscv_raw.best_estimator_
+    return gscv_reg.best_estimator_, gscv_raw.best_estimator_, sd_reg, sd_raw
 
 PLOTLY_LOGO = "https://www.flaticon.com/svg/static/icons/svg/218/218153.svg"
 
@@ -200,6 +207,7 @@ app.layout = html.Div([
     html.Ul(id='var_list'),
     html.H5('Barriers Not Used:'),
     html.Ul(id='unused-var-list'),
+    dcc.Graph(id="cdf", animate=False),
     html.Div(id='datasets', style={'display': 'none'}),
     html.Div(id='blah', style={'display': 'none'}),
 
@@ -217,30 +225,31 @@ app.layout = html.Div([
 
 
 def update_model(value):
-    reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model, rarity_dict = train()
+    reg_coeffs, reg_inter, reg_model, raw_coeffs, raw_inter, raw_model, rarity_dict, sd_reg, sd_raw = train()
+    sd_df = pd.DataFrame(columns=["sd_reg","sd_raw"])
+    sd_df.loc[len(sd_df)] = [sd_reg,sd_raw]
+    print(sd_df)
     col_list = reg_coeffs['variable'].tolist()
     lst = [list(i) for i in itertools.product([0, 1], repeat=len(col_list))]
-    all_possible_raw = pd.DataFrame(lst, columns=col_list).sample(2500)
+    all_possible_raw = pd.DataFrame(lst, columns=col_list).sample(3000)
     all_possible_raw = rarity_score(all_possible_raw,rarity_dict)
     all_possible_le = all_possible_raw.copy()
     for model in ["raw","least_error"]:
         if model == "raw":
             all_possible_raw['prediction'] = (math.e**raw_model.predict(all_possible_raw.loc[:, all_possible_raw.columns != 'row_rarity'])).round(0)
             all_possible_raw = all_possible_raw.sort_values('row_rarity', ascending=False).drop_duplicates(['will_playing','noah_playing','stefan_playing','prediction'])
-            print(all_possible_raw[0:5])
         else:
             all_possible_le['prediction'] = (math.e**reg_model.predict(all_possible_le.loc[:, all_possible_le.columns != 'row_rarity'])).round(0)
             all_possible_le = all_possible_le.sort_values('row_rarity', ascending=False).drop_duplicates(['will_playing','noah_playing','stefan_playing','prediction'])
-            print(all_possible_raw[0:5])
     datasets = {
         'reg_coeffs': reg_coeffs.to_json(orient='split'),
         'reg_inter': reg_inter.to_json(orient='split'),
         'raw_coeffs': raw_coeffs.to_json(orient='split'),
         'raw_inter': raw_inter.to_json(orient='split'),
         'all_possible_raw': all_possible_raw.to_json(orient='split'),
-        'all_possible_le': all_possible_le.to_json(orient='split')
+        'all_possible_le': all_possible_le.to_json(orient='split'),
+        'sd_df': sd_df.to_json(orient='split')
     }
-    print("I was used")
     loading = ""
     return json.dumps(datasets), loading
 
@@ -282,7 +291,8 @@ def update_graph(regularization, json_datasets):
         dash.dependencies.Output('hard-rounds', 'children'),
         dash.dependencies.Output('var_list', 'children'),
         dash.dependencies.Output('unused-var-list', 'children'),
-        dash.dependencies.Output("loading-output-3", "children")
+        dash.dependencies.Output("loading-output-3", "children"),
+        dash.dependencies.Output("cdf", "figure")
     ],
     [
         dash.dependencies.Input('slider', 'value'),
@@ -294,16 +304,19 @@ def update_graph(regularization, json_datasets):
 
 def update_chosen_round(slider,regularization, json_datasets, playing):
     datasets = json.loads(json_datasets)
+    sd_df = pd.read_json(datasets['sd_df'], orient='split')
     if regularization == 'least_error':
         all_possible = pd.read_json(datasets['all_possible_le'], orient='split')
         reg_coeffs = pd.read_json(datasets['reg_coeffs'], orient='split')
         reg_inter = pd.read_json(datasets['reg_inter'], orient='split')
         coeffs, intercept = reg_coeffs, reg_inter
+        sd = sd_df['sd_reg'].tolist()[0]
     else:
         all_possible = pd.read_json(datasets['all_possible_raw'], orient='split')
         raw_coeffs = pd.read_json(datasets['raw_coeffs'], orient='split')
         raw_inter = pd.read_json(datasets['raw_inter'], orient='split')
         coeffs, intercept = raw_coeffs, raw_inter
+        sd = sd_df['sd_raw'].tolist()[0]
 
     name_list = ['noah_playing', 'stefan_playing', 'will_playing']
     if playing is None:
@@ -333,9 +346,21 @@ def update_chosen_round(slider,regularization, json_datasets, playing):
     neg_barr_names = [html.Li(x) for x in final_barriers]
     col_list = coeffs['variable'].tolist()
     unused_barr = [html.Li(x) for x in col_list if (x not in final_barriers) and (x not in name_list)]
-    num_rounds = "**Chosen Game - Predicted Rounds: **" + str(round(best_game['prediction'].tolist()[0], 1))
+    prediction = best_game['prediction'].tolist()[0]
+    sd = -1 * sd * prediction
+    num_rounds = "**Chosen Game - Predicted Rounds: **"+ str(prediction)
+    x = range(math.ceil(prediction - 3 * sd), math.floor(prediction + 3 * sd) + 1)
+    fig = px.histogram(
+        x=x,
+        y=stats.norm.cdf(x, prediction, sd),
+        title='CDF of Predicted Rounds',
+        color_discrete_sequence=['#78c2ad'] * len(x),
+        nbins=len(x),
+        labels=dict(x="Round Started"),
+    )
+    fig.update_yaxes(title="Percentile")
     loading = ""
-    return num_rounds, neg_barr_names, unused_barr, loading
+    return num_rounds, neg_barr_names, unused_barr, loading, fig
 
 
 
