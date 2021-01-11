@@ -346,18 +346,25 @@ def update_chosen_round(slider,regularization, json_datasets, playing):
     neg_barr_names = [html.Li(x) for x in final_barriers]
     col_list = coeffs['variable'].tolist()
     unused_barr = [html.Li(x) for x in col_list if (x not in final_barriers) and (x not in name_list)]
-    prediction = best_game['prediction'].tolist()[0]
-    sd = -1 * sd * prediction
-    num_rounds = "**Chosen Game - Predicted Rounds: **"+ str(prediction)
-    x = range(math.ceil(prediction - 3 * sd), math.floor(prediction + 3 * sd) + 1)
+    prediction = math.log(best_game['prediction'].tolist()[0])
+    sd = -1 * sd
+    num_rounds = "**Chosen Game - Predicted Rounds: **"+ str(int(round(math.e**(prediction))))
+    # x = np.linspace(prediction - sd*3, prediction + sd*3, 1000)
+    better_num = list(range(math.ceil(math.e**(prediction - 3 * sd)), math.floor(math.e**(prediction + 3 * sd)) + 1))
+    log_better = np.log(better_num)
+    cdf_df = pd.DataFrame()
+    cdf_df['percentile'] = stats.norm.cdf(log_better, prediction, sd)
+    cdf_df['possible_game'] = better_num
+
     fig = px.histogram(
-        x=x,
-        y=stats.norm.cdf(x, prediction, sd),
+        cdf_df,
+        x='possible_game',
+        y='percentile',
         title='CDF of Predicted Rounds',
-        color_discrete_sequence=['#78c2ad'] * len(x),
-        nbins=len(x),
-        labels=dict(x="Round Started"),
+        color_discrete_sequence=['#78c2ad'] * len(cdf_df),
+        nbins=len(cdf_df),
     )
+    fig.update_xaxes(title="Round Started")
     fig.update_yaxes(title="Percentile")
     loading = ""
     return num_rounds, neg_barr_names, unused_barr, loading, fig
