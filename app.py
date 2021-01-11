@@ -62,7 +62,7 @@ def rarity_score(df,rarity_dict):
         for column in df.columns:
             if column not in ['will_playing', 'stefan_playing', 'noah_playing']:
                 row_rarity.append(row[column] * rarity_dict[column])
-        rarity_col.append(np.sum(row_rarity))
+        rarity_col.append(np.sum(row_rarity)/len(row_rarity))
     df['row_rarity'] = rarity_col
     return df
 
@@ -84,7 +84,7 @@ def create_rarity_dict(df):
     rarity_dict = {}
     for column in df.columns:
         if column not in ['will_playing', 'stefan_playing', 'noah_playing']:
-            rarity_dict[column] = 1 - df[column].mean()
+            rarity_dict[column] = 1 - (df[column].mean() ** 2)
     print(rarity_dict)
     return rarity_dict
 
