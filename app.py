@@ -75,7 +75,7 @@ def train():
     df, answer = check_df()
     train, label = clean_df(df)
     rarity_dict = create_rarity_dict(train)
-    best_model_reg, best_model_raw, sd_reg, sd_raw = gscv(train, label, df)
+    best_model_reg, best_model_raw, sd_reg, sd_raw = gscv(train, label)
     for model in ['reg','raw']:
         if model == 'reg':
             model_file = best_model_reg
@@ -109,7 +109,7 @@ def coeffs(train, model):
     return coeffs, inter_df, model
 
 
-def gscv(train, label, df):
+def gscv(train, label):
     for model in ['raw','reg']:
         if model == 'reg':
             parameters = {'alpha': [.1,1,5,10,100,1000]}
@@ -124,9 +124,8 @@ def gscv(train, label, df):
             gscv_raw = GridSearchCV(model, parameters, scoring='neg_mean_absolute_error', cv=4)
             gscv_raw.fit(train, label)
             sd_raw = gscv_raw.best_score_
-
-
     return gscv_reg.best_estimator_, gscv_raw.best_estimator_, sd_reg, sd_raw
+
 
 PLOTLY_LOGO = "https://www.flaticon.com/svg/static/icons/svg/218/218153.svg"
 
@@ -231,7 +230,7 @@ def update_model(value):
     print(sd_df)
     col_list = reg_coeffs['variable'].tolist()
     lst = [list(i) for i in itertools.product([0, 1], repeat=len(col_list))]
-    all_possible_raw = pd.DataFrame(lst, columns=col_list).sample(3000)
+    all_possible_raw = pd.DataFrame(lst, columns=col_list).sample(2500)
     all_possible_raw = rarity_score(all_possible_raw,rarity_dict)
     all_possible_le = all_possible_raw.copy()
     for model in ["raw","least_error"]:
@@ -349,7 +348,6 @@ def update_chosen_round(slider,regularization, json_datasets, playing):
     prediction = math.log(best_game['prediction'].tolist()[0])
     sd = -1 * sd
     num_rounds = "**Chosen Game - Predicted Rounds: **"+ str(int(round(math.e**(prediction))))
-    # x = np.linspace(prediction - sd*3, prediction + sd*3, 1000)
     better_num = list(range(math.ceil(math.e**(prediction - 3 * sd)), math.floor(math.e**(prediction + 3 * sd)) + 1))
     log_better = np.log(better_num)
     cdf_df = pd.DataFrame()
@@ -368,7 +366,6 @@ def update_chosen_round(slider,regularization, json_datasets, playing):
     fig.update_yaxes(title="Percentile")
     loading = ""
     return num_rounds, neg_barr_names, unused_barr, loading, fig
-
 
 
 if __name__ == '__main__':
